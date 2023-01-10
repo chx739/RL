@@ -15,9 +15,12 @@ import gym
 def weight_init(layers):
     for layer in layers:
         torch.nn.init.kaiming_normal_(layer.weight, nonlinearity='relu')
-class DDQN(nn.Module):
+class DQN(nn.Module):
+    '''
+    DQN类
+    '''
     def __init__(self, state_size, action_size,layer_size, seed, layer_type="ff"):
-        super(DDQN, self).__init__()
+        super(DQN, self).__init__()
         self.seed = torch.manual_seed(seed)
         self.input_shape = state_size
         self.action_size = action_size
@@ -28,24 +31,18 @@ class DDQN(nn.Module):
         weight_init([self.head_1, self.ff_1])
     
     def forward(self, input):
-        """
-        
-        """
         x = torch.relu(self.head_1(input))
         x = torch.relu(self.ff_1(x))
         out = self.ff_2(x)
         
         return out
+
 class ReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
+    """固定大小的回放区来存储经验"""
 
     def __init__(self, buffer_size, batch_size, device, seed, gamma, n_step=1):
-        """Initialize a ReplayBuffer object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-            seed (int): random seed
+        """
+        初始化 ReplayBuffer.
         """
         self.device = device
         self.memory = deque(maxlen=buffer_size)  
@@ -57,12 +54,10 @@ class ReplayBuffer:
         self.n_step_buffer = deque(maxlen=self.n_step)
     
     def add(self, state, action, reward, next_state, done):
-        """Add a new experience to memory."""
-        #print("before:", state,action,reward,next_state, done)
+        """添加经验."""
         self.n_step_buffer.append((state, action, reward, next_state, done))
         if len(self.n_step_buffer) == self.n_step:
             state, action, reward, next_state, done = self.calc_multistep_return()
-            #print("after:",state,action,reward,next_state, done)
             e = self.experience(state, action, reward, next_state, done)
             self.memory.append(e)
     
@@ -76,7 +71,7 @@ class ReplayBuffer:
     
     
     def sample(self):
-        """Randomly sample a batch of experiences from memory."""
+        """从memory中随机抽取经验."""
         experiences = random.sample(self.memory, k=self.batch_size)
 
         states = torch.from_numpy(np.stack([e.state for e in experiences if e is not None])).float().to(self.device)
@@ -88,11 +83,10 @@ class ReplayBuffer:
         return (states, actions, rewards, next_states, dones)
 
     def __len__(self):
-        """Return the current size of internal memory."""
+        """返回当前memory大小."""
         return len(self.memory)
 
-class M_DQN_Agent():
-    """Interacts with and learns from the environment."""
+class Munchausen_DQN():
 
     def __init__(self,
                  state_size,
@@ -106,21 +100,8 @@ class M_DQN_Agent():
                  UPDATE_EVERY,
                  device,
                  seed):
-        """Initialize an Agent object.
-        
-        Params
-        ======
-            state_size (int): dimension of each state
-            action_size (int): dimension of each action
-            layer_size (int): size of the hidden layer
-            BATCH_SIZE (int): size of the training batch
-            BUFFER_SIZE (int): size of the replay memory
-            LR (float): learning rate
-            TAU (float): tau for soft updating the network weights
-            GAMMA (float): discount factor
-            UPDATE_EVERY (int): update frequency
-            device (str): device that is used for the compute
-            seed (int): random seed
+        """
+        初始化智能体
         """
         self.state_size = state_size
         self.action_size = action_size
@@ -135,27 +116,27 @@ class M_DQN_Agent():
         self.action_step = 4
         self.last_action = None
     
-        # Q-Network
-        self.qnetwork_local = DDQN(state_size, action_size,layer_size, seed).to(device)
-        self.qnetwork_target = DDQN(state_size, action_size,layer_size, seed).to(device)
+        # Q网络
+        self.qnetwork_local = DQN(state_size, action_size,layer_size, seed).to(device)
+        self.qnetwork_target = DQN(state_size, action_size,layer_size, seed).to(device)
         
         self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
         print(self.qnetwork_local)
         
-        # Replay memory
+        # 回放缓冲区
         self.memory = ReplayBuffer(BUFFER_SIZE, BATCH_SIZE, self.device, seed, self.GAMMA, 1)
         
-        # Initialize time step (for updating every UPDATE_EVERY steps)
+        # 初始化 time step 
         self.t_step = 0
     
     def step(self, state, action, reward, next_state, done, writer):
-        # Save experience in replay memory
+        # 保存经验在 replay memory
         self.memory.add(state, action, reward, next_state, done)
         
-        # Learn every UPDATE_EVERY time steps.
+        # 学习 
         self.t_step = (self.t_step + 1) % self.UPDATE_EVERY
         if self.t_step == 0:
-            # If enough samples are available in memory, get random subset and learn
+            # 如果内存中有足够的样本可用，则获取随机子集并学习
             if len(self.memory) > self.BATCH_SIZE:
                 experiences = self.memory.sample()
                 loss = self.learn(experiences)
@@ -163,13 +144,8 @@ class M_DQN_Agent():
                 writer.add_scalar("Q_loss", loss, self.Q_updates)
 
     def act(self, state, eps=0.):
-        """Returns actions for given state as per current policy. Acting only every 4 frames!
-        
-        Params
-        ======
-            frame: to adjust epsilon
-            state (array_like): current state
-            
+        """
+        根据当前策略返回给定状态的操作。 每4帧执行一次
         """
 
         if self.action_step == 4:
@@ -181,8 +157,8 @@ class M_DQN_Agent():
                 action_values = self.qnetwork_local(state)
             self.qnetwork_local.train()
 
-            # Epsilon-greedy action selection
-            if random.random() > eps: # select greedy action if random number is higher than epsilon or noisy network is used!
+            # Epsilon-greedy
+            if random.random() > eps: # 如果随机数大于 epsilon 选择贪心操作
                 action = np.argmax(action_values.cpu().data.numpy())
                 self.last_action = action
                 return action
@@ -190,74 +166,64 @@ class M_DQN_Agent():
                 action = random.choice(np.arange(self.action_size))
                 self.last_action = action 
                 return action
-            #self.action_step = 0
         else:
             self.action_step += 1
             return self.last_action
 
     def learn(self, experiences):
-        """Update value parameters using given batch of experience tuples.
-        Params
-        ======
-            experiences (Tuple[torch.Tensor]): tuple of (s, a, r, s', done) tuples 
-            gamma (float): discount factor
+        """
+        使用给定的经验元组更新价值参数
         """
         self.optimizer.zero_grad()
         states, actions, rewards, next_states, dones = experiences
-        # Get predicted Q values (for next states) from target model
+        # 从 target model 得到下回合预测Q值
         Q_targets_next = self.qnetwork_target(next_states).detach()
-        # calculate entropy term with logsum 
+        # 用logsum计算熵项
         logsum = torch.logsumexp(\
                                 (Q_targets_next - Q_targets_next.max(1)[0].unsqueeze(-1))/entropy_tau , 1).unsqueeze(-1)
 
         tau_log_pi_next = Q_targets_next - Q_targets_next.max(1)[0].unsqueeze(-1) - entropy_tau*logsum
-        # target policy
+        # 目标策略
         pi_target = F.softmax(Q_targets_next/entropy_tau, dim=1)
         Q_target = (self.GAMMA * (pi_target * (Q_targets_next-tau_log_pi_next)*(1 - dones)).sum(1)).unsqueeze(-1)
         
-        # calculate munchausen addon with logsum trick
+        # 用 logsum技巧计算munchausen addon
         q_k_targets = self.qnetwork_target(states).detach()
         v_k_target = q_k_targets.max(1)[0].unsqueeze(-1)
         logsum = torch.logsumexp((q_k_targets - v_k_target)/entropy_tau, 1).unsqueeze(-1)
         log_pi = q_k_targets - v_k_target - entropy_tau*logsum
         munchausen_addon = log_pi.gather(1, actions)
         
-        # calc munchausen reward:
+        # 计算munchausen奖励:
         munchausen_reward = (rewards + alpha*torch.clamp(munchausen_addon, min=lo, max=0))
         
-        # Compute Q targets for current states 
+        # 计算当前状态Q target
         Q_targets = munchausen_reward + Q_target
         
-        # Get expected Q values from local model
+        # 从local model获得Q_expected
         q_k = self.qnetwork_local(states)
         Q_expected = q_k.gather(1, actions)
         
-        # Compute loss
+        # 计算损失
         loss = F.mse_loss(Q_expected, Q_targets) #mse_loss
-        # Minimize the loss
+        # 最小化损失
         loss.backward()
-        #clip_grad_norm_(self.qnetwork_local.parameters(),1)
         self.optimizer.step()
 
-        # ------------------- update target network ------------------- #
+        # 更新目标网络
         self.soft_update(self.qnetwork_local, self.qnetwork_target)
         return loss.detach().cpu().numpy()            
 
     def soft_update(self, local_model, target_model):
-        """Soft update model parameters.
+        """Soft 更新 model 参数
         θ_target = τ*θ_local + (1 - τ)*θ_target
-        Params
-        ======
-            local_model (PyTorch model): weights will be copied from
-            target_model (PyTorch model): weights will be copied to
-            tau (float): interpolation parameter 
         """
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(self.TAU*local_param.data + (1.0-self.TAU)*target_param.data)
 
 def eval_runs(eps, frame):
     """
-    Makes an evaluation run with the current epsilon
+    使用当前 epsilon 进行评估运行
     """
     env = gym.make("CartPole-v0")
     reward_batch = []
@@ -275,17 +241,10 @@ def eval_runs(eps, frame):
     writer.add_scalar("Reward", np.mean(reward_batch), frame)
 
 def run(frames=1000, eps_fixed=False, eps_frames=1e6, min_eps=0.01):
-    """Deep Munchausen Q-Learning.
-    
-    Params
-    ======
-        n_episodes (int): maximum number of training episodes
-        max_t (int): maximum number of timesteps per episode
-        eps_start (float): starting value of epsilon, for epsilon-greedy action selection
-        eps_end (float): minimum value of epsilon
-        eps_decay (float): multiplicative factor (per episode) for decreasing epsilon
     """
-    scores = []                        # list containing scores from each episode
+    深度 Munchausen Q学习.
+    """
+    scores = []                        # 每回合分数
     scores_window = deque(maxlen=100)  # last 100 scores
     output_history = []
     frame = 0
@@ -304,20 +263,20 @@ def run(frames=1000, eps_fixed=False, eps_frames=1e6, min_eps=0.01):
         agent.step(state, action, reward, next_state, done, writer)
         state = next_state
         score += reward
-        # linear annealing to the min epsilon value until eps_frames and from there slowly decease epsilon to 0 until the end of training
+        # 线性退火到最小 epsilon 值直到 eps_frames，然后慢慢将 epsilon 降低到 0 直到训练结束
         if eps_fixed == False:
             if frame < eps_frames:
                 eps = max(eps_start - (frame*(1/eps_frames)), min_eps)
             else:
                 eps = max(min_eps - min_eps*((frame-eps_frames)/(frames-eps_frames)), 0.001)
         
-        # evaluation runs
+        # 评估运行
         if frame % 1000 == 0:
             eval_runs(eps, frame)
         
         if done:
-            scores_window.append(score)       # save most recent score
-            scores.append(score)              # save most recent score
+            scores_window.append(score)       # 保存最近最多分数
+            scores.append(score)              
             writer.add_scalar("Average100", np.mean(scores_window), frame)
             output_history.append(np.mean(scores_window))
             print('\rEpisode {}\tFrame {} \tAverage Score: {:.2f}'.format(i_episode, frame, np.mean(scores_window)), end="")
@@ -356,7 +315,7 @@ if __name__ == "__main__":
     action_size     = env.action_space.n
     state_size = env.observation_space.shape
 
-    agent = M_DQN_Agent(state_size=state_size,    
+    agent = Munchausen_DQN(state_size=state_size,    
                         action_size=action_size,
                         layer_size=256,
                         BATCH_SIZE=BATCH_SIZE, 
@@ -370,12 +329,10 @@ if __name__ == "__main__":
 
 
 
-    # set epsilon frames to 0 so no epsilon exploration
+    # 将 epsilon 帧设置为 0
     eps_fixed = False
 
     t0 = time.time()
     final_average100 = run(frames = 45000, eps_fixed=eps_fixed, eps_frames=5000, min_eps=0.025)
     t1 = time.time()
     
-    #print("Training time: {}min".format(round((t1-t0)/60,2)))
-    torch.save(agent.qnetwork_local.state_dict(), "M-DQN"+".pth")
